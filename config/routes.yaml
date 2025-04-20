@@ -1,0 +1,7 @@
+controllers:
+    resource: ../src/Controller/
+    type: attribute
+
+product_controller:
+    resource: ../src/Controller/ProductController.php
+    type: annotation
