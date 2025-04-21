@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Enum\InventoryStatus;
 use App\Service\ProductService;
+use App\Service\AuthorizationService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -15,16 +16,22 @@ use Symfony\Component\Routing\Annotation\Route;
 class ProductController extends AbstractController
 {
     private ProductService $productService;
+    private AuthorizationService $authorizationService;
 
-    public function __construct(ProductService $productService)
+    public function __construct(ProductService $productService, AuthorizationService $authorizationService)
     {
         $this->productService = $productService;
+        $this->authorizationService = $authorizationService;
     }
 
     #[Route('', name: 'api_products', methods: ['POST','GET'])]
     public function createProduct(Request $request,SerializerInterface $serializer): Response
     {
         if ($request->isMethod('POST')) {
+            if (!$this->authorizationService->isAdmin($this->getUser())) {
+            return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
+             }
+
             $data = json_decode($request->getContent(), true);
             $requiredFields = ['code', 'name', 'description', 'image', 'category', 'price', 'quantity', 'internalReference', 'shellId', 'inventoryStatus', 'rating'];
             // Check missing fields
@@ -72,6 +79,9 @@ class ProductController extends AbstractController
     #[Route('/{id}', name: 'api_product_patch', methods: ['PATCH'])]
     public function  patchProductById(int $id, Request $request, SerializerInterface $serializer): Response
     {
+        if (!$this->authorizationService->isAdmin($this->getUser())) {
+            return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
+        }
         $data = json_decode($request->getContent(), true);
 
         $requiredFields = ['code', 'name', 'description', 'image', 'category', 'price', 'quantity', 'internalReference', 'shellId', 'inventoryStatus', 'rating'];
@@ -98,6 +108,9 @@ class ProductController extends AbstractController
     #[Route('/{id}', name: 'api_product_delete', methods: ['DELETE'])]
     public function  deleteProductById(int $id, SerializerInterface $serializer): Response
     {
+        if (!$this->authorizationService->isAdmin($this->getUser())) {
+            return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
+        }
         $success = $this->productService->deleteProduct($id);
         if (!$success) {
             return new JsonResponse(['message' => 'Produit non trouvé'], Response::HTTP_NOT_FOUND);
