@@ -11,6 +11,8 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\Validator\Constraints\Email;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Component\Serializer\SerializerInterface;
@@ -29,9 +31,22 @@ class AuthController extends AbstractController
     }
 
     #[Route('/account', name: 'api_user_account', methods: ['POST'])]
-    public function createAccount(Request $request,SerializerInterface $serializer): Response
+    public function createAccount(Request $request,ValidatorInterface $validator): Response
     {
         $data = json_decode($request->getContent(), true);
+
+        $requiredFields = ['username', 'firstname', 'email', 'password'];
+        // Check missing fields
+        foreach ($requiredFields as $field) {
+            if (!isset($data[$field])) {
+                return new JsonResponse(['message' => "Champ manquant: $field"], Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $emailConstraint = new Email();
+        $emailErrors = $validator->validate($data['email'], $emailConstraint);
+        if (count($emailErrors) > 0) {
+            return new JsonResponse(['message' => (string) $emailErrors], Response::HTTP_BAD_REQUEST);
+        }
 
         $user = new User();
         $user->setUsername($data['username']);
