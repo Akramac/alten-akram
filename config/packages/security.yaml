@@ -1,29 +1,53 @@
 security:
+    enable_authenticator_manager: true
     # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
     password_hashers:
-        Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
+        App\Entity\User: 'bcrypt'
+        Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'bcrypt'
     # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
     providers:
-        users_in_memory: { memory: null }
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: email
+
     firewalls:
         dev:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
-        main:
-            lazy: true
-            provider: users_in_memory
 
-            # activate different ways to authenticate
-            # https://symfony.com/doc/current/security.html#the-firewall
+        account:
+            pattern: ^/account
+            stateless: true
+            security: false
 
-            # https://symfony.com/doc/current/security/impersonating_user.html
-            # switch_user: true
+        login:
+            pattern: ^/token
+            stateless: true
+            json_login:
+                check_path: /token
+                provider: app_user_provider
+                success_handler: lexik_jwt_authentication.handler.authentication_success
+                failure_handler: lexik_jwt_authentication.handler.authentication_failure
+                username_path: email
+
+        api:
+            pattern: ^/products
+            stateless: true
+            provider: app_user_provider
+            jwt: ~
+
+
+
 
     # Easy way to control access for large sections of your site
     # Note: Only the *first* access control that matches will be used
     access_control:
         # - { path: ^/admin, roles: ROLE_ADMIN }
         # - { path: ^/profile, roles: ROLE_USER }
+        - { path: ^/account, roles: IS_AUTHENTICATED_ANONYMOUSLY }
+        - { path: ^/token, roles: IS_AUTHENTICATED_ANONYMOUSLY }
+        - { path: ^/products, roles: IS_AUTHENTICATED_FULLY  }
 
 when@test:
     security:

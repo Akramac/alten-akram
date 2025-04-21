@@ -4,12 +4,14 @@ namespace App\Entity;
 
 use App\Repository\UserRepository;
 use Doctrine\DBAL\Types\Types;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: UserRepository::class)]
-class User
+class User implements UserInterface,PasswordAuthenticatedUserInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -68,7 +70,7 @@ class User
 
     public function getUsername(): ?string
     {
-        return $this->username;
+        return $this->email;
     }
 
     public function setUsername(string $username): self
@@ -76,6 +78,11 @@ class User
         $this->username = $username;
 
         return $this;
+    }
+
+    public function getRealUsername(): ?string
+    {
+        return $this->username;
     }
 
     public function getFirstname(): ?string
@@ -100,5 +107,16 @@ class User
         $this->plainPassword = $plainPassword;
 
         return $this;
+    }
+
+    public function getRoles(): array{
+        return  [];
+    }
+    public function eraseCredentials(){
+
+    }
+    public function getUserIdentifier(): string
+    {
+        return $this->email;
     }
 }

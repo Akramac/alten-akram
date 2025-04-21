@@ -5,3 +5,7 @@ controllers:
 product_controller:
     resource: ../src/Controller/ProductController.php
     type: annotation
+
+auth_controller:
+    resource: ../src/Controller/AuthController.php
+    type: annotation
