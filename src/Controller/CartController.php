@@ -2,9 +2,14 @@
 
 namespace App\Controller;
 
+use App\Entity\Cart;
+use App\Entity\CartItem;
 use App\Enum\InventoryStatus;
+use App\Repository\CartRepository;
+use App\Repository\ProductRepository;
+use App\Repository\UserRepository;
 use App\Service\ProductService;
-use App\Service\AuthorizationService;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -12,111 +17,119 @@ use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Annotation\Route;
 
-#[Route('/products')]
-class ProductController extends AbstractController
+class CartController extends AbstractController
 {
-    private ProductService $productService;
-    private AuthorizationService $authorizationService;
+    private EntityManagerInterface $entityManager;
+    private CartRepository $cartRepository;
+    private UserRepository $userRepository;
+    private ProductRepository $productRepository;
 
-    public function __construct(ProductService $productService, AuthorizationService $authorizationService)
+    public function __construct(EntityManagerInterface $entityManager, CartRepository $cartRepository, UserRepository $userRepository,ProductRepository $productRepository)
     {
-        $this->productService = $productService;
-        $this->authorizationService = $authorizationService;
+        $this->entityManager = $entityManager;
+        $this->cartRepository = $cartRepository;
+        $this->userRepository = $userRepository;
+        $this->productRepository = $productRepository;
     }
 
-    #[Route('', name: 'api_products', methods: ['POST','GET'])]
-    public function createProduct(Request $request,SerializerInterface $serializer): Response
+    #[Route('/cart', name: 'api_cart', methods: ['GET'])]
+    public function getCart(Request $request): Response
     {
-        if ($request->isMethod('POST')) {
-            if (!$this->authorizationService->isAdmin($this->getUser())) {
-            return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
-             }
+        $user = $this->getUser();
+        $cart = $this->cartRepository->findOneBy(['user' => $user]);
 
-            $data = json_decode($request->getContent(), true);
-            $requiredFields = ['code', 'name', 'description', 'image', 'category', 'price', 'quantity', 'internalReference', 'shellId', 'inventoryStatus', 'rating'];
-            // Check missing fields
-            foreach ($requiredFields as $field) {
-                if (!isset($data[$field])) {
-                    return new JsonResponse(['message' => "Champ manquant: $field"], Response::HTTP_BAD_REQUEST);
-                }
-            }
-            if (isset($data['inventoryStatus']) && in_array($data['inventoryStatus'], [InventoryStatus::INSTOCK->value, InventoryStatus::LOWSTOCK->value, InventoryStatus::OUTOFSTOCK->value])) {
-                $product = $this->productService->createProduct($data);
-            } else {
-                return new JsonResponse(['message' => 'inventory status incorrect'], Response::HTTP_BAD_REQUEST);
-            }
-            if ($product) {
-                return new JsonResponse(['message' => 'Produit ajouté'], Response::HTTP_OK);
-            } else {
-                return new JsonResponse(['message' => 'Erreur lors de l\'ajout'], Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-        } elseif ($request->isMethod('GET')) {
-            // Handle GET request to get all products
-            $products = $this->productService->getProducts();
-
-            if ($products) {
-                $jsonProducts = $serializer->serialize($products, 'json', ['groups' => 'produits']);
-                return new Response($jsonProducts, Response::HTTP_OK, ['Content-Type' => 'application/json']);
-            } else {
-                return new JsonResponse(['message' => 'Pas de produits trouvés'], Response::HTTP_NOT_FOUND);
-            }
+        if (!$cart) {
+            return new JsonResponse(['message' => 'Panier non trouvé'], Response::HTTP_NOT_FOUND);
         }
 
-        return new JsonResponse(['message' => 'Methode non prise en compte'], Response::HTTP_METHOD_NOT_ALLOWED);
+        $items = $cart->getCartItems();
+        $cartData = [];
+
+        foreach ($items as $item) {
+            $product = $item->getProduct();
+            $cartData[] = [
+                'id' => $product->getId(),
+                'name' => $product->getName(),
+                'price' => $product->getPrice(),
+                'quantity' => $item->getQuantity(),
+            ];
+        }
+
+        return new JsonResponse($cartData, Response::HTTP_OK);
     }
 
-    #[Route('/{id}', name: 'api_product_get_one', methods: ['GET'])]
-    public function getProductById(int $id,SerializerInterface $serializer): Response
+    #[Route('/cart/add', name: 'api_cart_add', methods: ['POST'])]
+    public function addToCart(Request $request): Response
     {
-        $product = $this->productService->getProductById($id);
-        if (!$product) {
-            return new JsonResponse(['message' => 'Produit non trouvé'], Response::HTTP_NOT_FOUND);
+        $userInterface = $this->getUser();
+        $user = $this->userRepository->find($userInterface?->getId());
+        $cart = $this->cartRepository->findOneBy(['user' => $user]);
+        if (!$user) {
+            return new JsonResponse(['message' => 'Connectez vous!'], Response::HTTP_NOT_FOUND);
         }
-        $jsonProduct = $serializer->serialize($product, 'json', ['groups' => 'produits']);
-        return new Response($jsonProduct, Response::HTTP_OK, ['Content-Type' => 'application/json']);
-    }
+        if (!$cart) {
+            $cart = new Cart();
+            $cart->setUser($user);
+            $this->entityManager->persist($cart);
+        }
 
-    #[Route('/{id}', name: 'api_product_patch', methods: ['PATCH'])]
-    public function  patchProductById(int $id, Request $request, SerializerInterface $serializer): Response
-    {
-        if (!$this->authorizationService->isAdmin($this->getUser())) {
-            return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
-        }
         $data = json_decode($request->getContent(), true);
-
-        $requiredFields = ['code', 'name', 'description', 'image', 'category', 'price', 'quantity', 'internalReference', 'shellId', 'inventoryStatus', 'rating'];
-        // Check field exist
-        $atLeastOneFieldPresent = false;
-        foreach ($requiredFields as $field) {
-            if (isset($data[$field])) {
-                $atLeastOneFieldPresent = true;
-                break;
-            }
+        if (!isset($data['productId'])) {
+            return new JsonResponse(['message' => 'productId manquant'], Response::HTTP_BAD_REQUEST);
         }
-        if (!$atLeastOneFieldPresent) {
-            return new JsonResponse(['message' => 'Au moins un champ doit etre valide'], Response::HTTP_BAD_REQUEST);
+        if (!isset($data['quantity'])) {
+            return new JsonResponse(['message' => 'quantity manquant'], Response::HTTP_BAD_REQUEST);
         }
 
-        $product = $this->productService->updateProduct($id, $data);
+        $product = $this->productRepository->find($data['productId']);
+
         if (!$product) {
             return new JsonResponse(['message' => 'Produit non trouvé'], Response::HTTP_NOT_FOUND);
         }
-        $jsonProduct = $serializer->serialize($product, 'json', ['groups' => 'produits']);
-        return new Response($jsonProduct, Response::HTTP_OK, ['Content-Type' => 'application/json']);
-    }
 
-    #[Route('/{id}', name: 'api_product_delete', methods: ['DELETE'])]
-    public function  deleteProductById(int $id, SerializerInterface $serializer): Response
+        $item = new CartItem();
+        $item->setCart($cart);
+        $item->setProduct($product);
+        $item->setQuantity($data['quantity']);
+
+        $cart->addCartItem($item);
+        $this->entityManager->persist($item);
+        $this->entityManager->flush();
+
+        return new JsonResponse(['message' => 'Produit ajouté '], Response::HTTP_CREATED);
+    }
+    #[Route('/cart/remove', name: 'api_cart_remove', methods: ['POST'])]
+    public function removeFromCart(Request $request): Response
     {
-        if (!$this->authorizationService->isAdmin($this->getUser())) {
-            return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
-        }
-        $success = $this->productService->deleteProduct($id);
-        if (!$success) {
-            return new JsonResponse(['message' => 'Produit non trouvé'], Response::HTTP_NOT_FOUND);
-        }
-        return new JsonResponse(['message' => 'Produit supprimé'], Response::HTTP_OK);
+        $userInterface = $this->getUser();
+        $user = $this->userRepository->find($userInterface?->getId());
+        $cart = $this->cartRepository->findOneBy(['user' => $user]);
 
+        if (!$user) {
+            return new JsonResponse(['message' => 'Connectez vous!'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$cart) {
+            return new JsonResponse(['message' => 'Panier non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!isset($data['productId'])) {
+            return new JsonResponse(['message' => 'productId manquant'], Response::HTTP_BAD_REQUEST);
+        }
+        $product = $this->productRepository->find($data['productId']);
+
+        $item = $cart->getCartItems()->filter(function (CartItem $cartItem) use ($product) {
+            return $cartItem->getProduct() === $product;
+        })->first();
+
+        if (!$item) {
+            return new JsonResponse(['message' => 'Produit non trouvé dans le panier'], Response::HTTP_NOT_FOUND);
+        }
+
+        $cart->removeCartItem($item);
+        $this->entityManager->remove($item);
+        $this->entityManager->flush();
+
+        return new JsonResponse(['message' => 'Produit supprimé du panier'], Response::HTTP_OK);
     }
-
 }

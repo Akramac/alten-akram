@@ -37,6 +37,12 @@ security:
             provider: app_user_provider
             jwt: ~
 
+        cart:
+            pattern: ^/cart
+            stateless: true
+            provider: app_user_provider
+            jwt: ~
+
 
 
 
@@ -48,6 +54,7 @@ security:
         - { path: ^/account, roles: IS_AUTHENTICATED_ANONYMOUSLY }
         - { path: ^/token, roles: IS_AUTHENTICATED_ANONYMOUSLY }
         - { path: ^/products, roles: IS_AUTHENTICATED_FULLY  }
+        - { path: ^/cart, roles: IS_AUTHENTICATED_FULLY  }
 
 when@test:
     security:
