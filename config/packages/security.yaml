@@ -43,6 +43,12 @@ security:
             provider: app_user_provider
             jwt: ~
 
+        wishlist:
+            pattern: ^/wishlist
+            stateless: true
+            provider: app_user_provider
+            jwt: ~
+
 
 
 
@@ -55,6 +61,7 @@ security:
         - { path: ^/token, roles: IS_AUTHENTICATED_ANONYMOUSLY }
         - { path: ^/products, roles: IS_AUTHENTICATED_FULLY  }
         - { path: ^/cart, roles: IS_AUTHENTICATED_FULLY  }
+        - { path: ^/wishlist, roles: IS_AUTHENTICATED_FULLY  }
 
 when@test:
     security:
